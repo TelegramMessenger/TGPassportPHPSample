@@ -10,11 +10,11 @@ if ($_GET['set_ssid']) {
   }
   setcookie('tg_ssid', $ssid, time() + 864000, '', '', true, true);
   if ($_GET['tg_passport'] == 'success') {
-    $payload = hash_hmac('sha256', 'payload'.$ssid, HMAC_SECRET);
+    $nonce = hash_hmac('sha256', 'nonce'.$ssid, HMAC_SECRET);
     $passport_data = [
       'pending' => time(),
     ];
-    $MC->add('passport_data_'.$payload, $passport_data);
+    $MC->add('passport_data_'.$nonce, $passport_data);
   }
   $redirect_url = BASE_URL.'example.php';
   header('Location: '.$redirect_url);
@@ -28,20 +28,20 @@ if (!$ssid) {
   setcookie('tg_ssid', $ssid, time() + 864000, '', '', true, true);
 }
 $ssid_hash    = hash_hmac('sha256', 'ssid'.$ssid, HMAC_SECRET);
-$payload      = hash_hmac('sha256', 'payload'.$ssid, HMAC_SECRET);
+$nonce        = hash_hmac('sha256', 'nonce'.$ssid, HMAC_SECRET);
 $callback_url = BASE_URL.'example.php?set_ssid='.$ssid.'_'.$ssid_hash;
 
 // Logout case
 if ($_GET['logout']) {
   setcookie('tg_ssid', '', 1, '', '', true, true);
-  $MC->delete('passport_data_'.$payload);
+  $MC->delete('passport_data_'.$nonce);
 
   $redirect_url = BASE_URL.'example.php';
   header('Location: '.$redirect_url);
   exit;
 }
 
-$passport_data = $MC->get('passport_data_'.$payload);
+$passport_data = $MC->get('passport_data_'.$nonce);
 
 if ($passport_data['pending']) {
 
@@ -57,7 +57,7 @@ setTimeout(function() {
 JAVASCRIPT;
 
 }
-elseif ($passport_data && $passport_data['payload'] == $payload) {
+elseif ($passport_data && $passport_data['nonce'] == $nonce) {
 
   $tg_user    = $passport_data['user'];
   $first_name = htmlspecialchars($tg_user['first_name']);
@@ -151,6 +151,25 @@ HTML;
 </dl>
 HTML;
       }
+      if ($password_value['translation']) {
+        $files_html = '';
+        foreach ($password_value['translation'] as $passport_file) {
+          $file_url    = htmlspecialchars($passport_file['file_url']);
+          $files_html .= <<<HTML
+<div class="file_item">
+  <a href="{$file_url}" target="_blank"><img src="{$file_url}" /></a>
+<div>
+HTML;
+        }
+        $fields_html .= <<<HTML
+<dl>
+  <dt>translation</dt>
+  <dd>
+    <div class="files">{$files_html}</div>
+  </dd>
+</dl>
+HTML;
+      }
       if ($password_value['phone_number']) {
         $phone_number = htmlspecialchars($password_value['phone_number']);
         $fields_html .= <<<HTML
@@ -180,9 +199,16 @@ HTML;
 else {
   $options_str = json_encode([
     'bot_id'       => BOT_ID,
-    'scope'        => ['id_document', 'id_selfie', 'address_document', 'phone_number', 'email'],
+    'scope'        => ['data' => [
+      ['type' => 'personal_details', 'native_names' => true],
+      ['type' => 'id_document', 'selfie' => true],
+      'address',
+      ['type' => 'address_document', 'translation' => true],
+      'phone_number',
+      'email'
+    ], 'v' => 1],
     'public_key'   => BOT_PUBLIC_KEY,
-    'payload'      => $payload,
+    'nonce'        => $nonce,
     'callback_url' => $callback_url,
   ]);
   $html .= <<<HTML

@@ -43,13 +43,13 @@ try {
   $credentials_data           = json_decode($credentials_data_json, true);
 
   if (!isset($credentials_data['secure_data']) ||
-      !isset($credentials_data['payload'])) {
+      !isset($credentials_data['nonce'])) {
     throw new Exception('CREDENTIALS_FORMAT_INVALID');
   }
   $secure_data = $credentials_data['secure_data'];
-  $payload     = $credentials_data['payload'];
-  if (!preg_match('/^[0-9a-f]{64}$/', $payload)) {
-    throw new Exception('PAYLOAD_INVALID');
+  $nonce       = $credentials_data['nonce'];
+  if (!preg_match('/^[0-9a-f]{64}$/', $nonce)) {
+    throw new Exception('NONCE_INVALID');
   }
 
   foreach ($passport_data['data'] as &$passport_data_item) {
@@ -143,24 +143,44 @@ try {
           }
         }
       }
+      if (isset($secure_data_item['translation']) &&
+          isset($passport_data_item['translation'])) {
+        foreach ($passport_data_item['translation'] as $i => $file_data) {
+          $file_id        = $file_data['file_id'];
+          $file_encrypted = botApiGetFileContentsByFileId($file_id);
+          if ($file_encrypted !== false) {
+            $file_credentials = $secure_data_item['translation'][$i];
+            $file_hash        = base64_decode($file_credentials['file_hash']);
+            $file_secret      = base64_decode($file_credentials['secret']);
+            $file_content     = decryptData($file_encrypted, $file_secret, $file_hash);
+            $file_local_path  = md5($file_id).'.jpg';
+            unset($file_data['file_path']);
+            if (file_put_contents(FILES_DIR.$file_local_path, $file_content)) {
+              $file_data['file_url'] = FILES_BASE_URL.$file_local_path;
+            }
+            $file_data['file_hash'] = $file_credentials['file_hash'];
+            $passport_data_item['translation'][$i] = $file_data;
+          }
+        }
+      }
     }
   }
 } catch (Exception $e) {
-  if (!isset($credentials_data['payload']) ||
-      !preg_match('/^[0-9a-f]{64}$/', $credentials_data['payload'])) {
-    // Payload invalid
+  if (!isset($credentials_data['nonce']) ||
+      !preg_match('/^[0-9a-f]{64}$/', $credentials_data['nonce'])) {
+    // Nonce invalid
     exit;
   }
-  $payload = $credentials_data['payload'];
+  $nonce = $credentials_data['nonce'];
   $passport_data = [
     'error' => $e->getMessage(),
   ];
 }
 
 $passport_data['user'] = $update['message']['from'];
-$passport_data['payload'] = $payload;
+$passport_data['nonce'] = $nonce;
 
-$MC->set('passport_data_'.$payload, $passport_data);
+$MC->set('passport_data_'.$nonce, $passport_data);
 exit;
 
 
